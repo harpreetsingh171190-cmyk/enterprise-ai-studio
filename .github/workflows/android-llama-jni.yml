@@ -1,0 +1,25 @@
+name: Android llama.cpp JNI compile check
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'android/MLCChat/app/src/main/cpp/**'
+      - 'android/MLCChat/app/src/main/java/ai/mlc/mlcchat/enterprise/**'
+      - '.github/workflows/android-llama-jni.yml'
+jobs:
+  native-compile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install llama.cpp pinned tag
+        run: bash android/MLCChat/app/src/main/cpp/setup-llama.sh
+      - name: Configure Android JNI
+        env:
+          NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
+        run: |
+          cmake -S android/MLCChat/app/src/main/cpp -B /tmp/llama-android-build \
+            -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-28 \
+            -DCMAKE_BUILD_TYPE=Release
+      - name: Compile JNI native library
+        run: cmake --build /tmp/llama-android-build --target enterprise_gguf -j 2
