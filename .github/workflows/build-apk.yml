@@ -61,7 +61,7 @@ jobs:
       # Runs only when a tag such as v1.0 is pushed (or created via the Releases page).
       - name: Publish GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: android/MLCChat/app/build/outputs/apk/debug/*.apk
           generate_release_notes: true
