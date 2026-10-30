@@ -1,0 +1,131 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/build-apk.yml'
+      - '.gitmodules'
+      - '3rdparty/**'
+      - 'android/**'
+      - 'CMakeLists.txt'
+      - 'pyproject.toml'
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout source and submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Verify submodules
+        shell: bash
+        run: |
+          set -euo pipefail
+          git submodule sync --recursive
+          git submodule update --init --recursive
+          git submodule status
+          test -f 3rdparty/tvm/CMakeLists.txt
+          test -f 3rdparty/tokenizers-cpp/CMakeLists.txt
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install system build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential clang cmake ninja-build pkg-config libffi-dev
+
+      - name: Configure Android SDK and NDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          test -n "$SDK"
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+          yes | "$SDK/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$SDK/cmdline-tools/latest/bin/sdkmanager" --install \
+            'platform-tools' 'platforms;android-34' 'build-tools;34.0.0' 'ndk;27.0.11718014'
+          NDK="$SDK/ndk/27.0.11718014"
+          test -f "$NDK/build/cmake/android.toolchain.cmake"
+          test -x "$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang"
+          echo "ANDROID_NDK=$NDK" >> "$GITHUB_ENV"
+          echo "TVM_NDK_CC=$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang" >> "$GITHUB_ENV"
+          echo "TVM_SOURCE_DIR=$GITHUB_WORKSPACE/3rdparty/tvm" >> "$GITHUB_ENV"
+          echo "MLC_LLM_SOURCE_DIR=$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
+
+      - name: Install Rust Android target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: Install Python build dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install --upgrade scikit-build-core cmake ninja pybind11 packaging
+          python -c "import scikit_build_core.build; print('Build backend OK')"
+
+      - name: Install MLC Python package
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -e . --no-build-isolation
+
+      - name: Prepare Android runtime libraries
+        shell: bash
+        run: |
+          set -euo pipefail
+          if test -f android/mlc4j/prepare_libs.py; then
+            python android/mlc4j/prepare_libs.py
+          elif test -f android/MLCChat/mlc4j/prepare_libs.py; then
+            python android/MLCChat/mlc4j/prepare_libs.py
+          elif test -f android/MLCChat/mlc-package-config.json; then
+            (cd android/MLCChat && mlc_llm package)
+          else
+            echo 'No supported MLC Android runtime preparation entry point found.' >&2
+            exit 1
+          fi
+
+      - name: Build debug APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          if test -f android/MLCChat/gradlew; then
+            cd android/MLCChat
+          elif test -f android/gradlew; then
+            cd android
+          elif test -f gradlew; then
+            :
+          else
+            echo 'Gradle wrapper not found.' >&2
+            exit 1
+          fi
+          chmod +x ./gradlew
+          ./gradlew --no-daemon assembleDebug
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MLC-LLM-Enterprise-AI-Studio-debug-apk
+          path: '**/build/outputs/apk/debug/*.apk'
+          if-no-files-found: error
+          retention-days: 14
