@@ -41,6 +41,17 @@ jobs:
           if not exist "3rdparty\tvm\CMakeLists.txt" exit /b 1
           if not exist "3rdparty\tokenizers-cpp\CMakeLists.txt" exit /b 1
 
+      - name: Debug TVM submodule
+        shell: bash
+        run: |
+          git submodule status 3rdparty/tvm
+          echo "--- tensor.h locations ---"
+          find 3rdparty/tvm -name "tensor.h" | head
+          echo "--- ndarray.h locations ---"
+          find 3rdparty/tvm -name "ndarray.h" | head
+          echo "--- tvm_file_glob ---"
+          grep -rn "tvm_file_glob" 3rdparty/tvm/cmake | head -3 || echo "tvm_file_glob NOT FOUND in TVM"
+
       - name: Set up Conda
         uses: conda-incubator/setup-miniconda@v3
         with:
