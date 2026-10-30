@@ -1,0 +1,17 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+
+  - package-ecosystem: gradle
+    directory: /android/MLCChat
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    ignore:
+      # Compose compiler 1.4.3 is tied to Kotlin 1.8.10; bump these together by hand.
+      - dependency-name: androidx.compose:compose-bom
+      - dependency-name: org.jetbrains.kotlin.android
