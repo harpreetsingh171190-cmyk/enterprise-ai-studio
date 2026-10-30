@@ -1,0 +1,44 @@
+name: Lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lint-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Pre-commit lint checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@b75a909f75acd358c2196fb9a5f1299a9a8868a4 # v6.7.0
+
+      - name: Set up Python environment
+        run: uv sync --group lint --no-install-project
+
+      - name: Verify pre-commit configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f .pre-commit-config.yaml
+          uv run --no-sync pre-commit --version
+
+      - name: Run pre-commit checks
+        run: uv run --no-sync pre-commit run --all-files --show-diff-on-failure
