@@ -1,0 +1,94 @@
+# Windows CI for MLC-LLM
+name: Windows CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  Windows:
+    name: Build MLC-LLM on Windows
+    runs-on: windows-latest
+    timeout-minutes: 120
+
+    defaults:
+      run:
+        shell: cmd /C call {0}
+
+    steps:
+      - name: Configure Git long paths
+        run: git config --global core.longpaths true
+
+      - name: Checkout source and submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Verify submodules
+        run: |
+          git submodule status
+          if not exist "3rdparty\tvm\CMakeLists.txt" exit /b 1
+          if not exist "3rdparty\tokenizers-cpp\CMakeLists.txt" exit /b 1
+
+      - name: Debug TVM submodule
+        shell: bash
+        run: |
+          git submodule status 3rdparty/tvm
+          echo "--- tensor.h locations ---"
+          find 3rdparty/tvm -name "tensor.h" -path "*runtime*" | head
+          echo "--- tvm_file_glob (top-level TVM) ---"
+          grep -rn "tvm_file_glob" 3rdparty/tvm/cmake | head -3 || echo "NOT FOUND in top-level TVM"
+          echo "--- tvm-tirx folder ---"
+          ls 3rdparty/tvm/3rdparty/tvm-tirx | head -30
+          test -f 3rdparty/tvm/3rdparty/tvm-tirx/CMakeLists.txt && echo "tirx CMake OK" || echo "tirx CMake MISSING"
+          grep -rn "tvm_file_glob" 3rdparty/tvm/3rdparty/tvm-tirx/cmake | head -3 || echo "tvm_file_glob NOT FOUND in tirx"
+          test -d 3rdparty/tvm/3rdparty/tvm-tirx/3rdparty/dlpack/include && echo "tirx dlpack OK" || echo "tirx dlpack MISSING"
+
+      - name: Set up Conda
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          activate-environment: mlc-llm-build
+          channel-priority: strict
+          environment-file: ci/build-environment.yaml
+          auto-activate-base: false
+
+      - name: Conda information
+        run: |
+          conda info
+          conda list
+          python --version
+
+      - name: Set up MSVC developer environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Verify Python build backend
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install scikit-build-core
+          python -c "import scikit_build_core.build; print('Build backend OK')"
+
+      - name: Build MLC-LLM without LLVM
+        env:
+          SKBUILD_CMAKE_DEFINE_TVM_TIRX_USE_LLVM: "OFF"
+          SKBUILD_CMAKE_ARGS: "-DTVM_TIRX_USE_LLVM=OFF"
+          # TEST: point TVM_SOURCE_DIR at the nested tvm-tirx tree (where runtime/tensor.h lives)
+          TVM_SOURCE_DIR: 3rdparty/tvm/3rdparty/tvm-tirx
+        run: |
+          echo TVM_TIRX_USE_LLVM=OFF
+          echo SKBUILD_CMAKE_ARGS=%SKBUILD_CMAKE_ARGS%
+          echo TVM_SOURCE_DIR=%TVM_SOURCE_DIR%
+          call ci\task\build_win.bat
+          if errorlevel 1 exit /b 1
