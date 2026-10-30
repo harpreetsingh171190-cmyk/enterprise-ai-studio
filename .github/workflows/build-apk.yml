@@ -1,0 +1,68 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    tags: ['v*']
+    paths:
+      - 'android/**'
+      - '.github/workflows/build-apk.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    # Needed only so the release step can attach the APK to a GitHub Release.
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Accept Android SDK licenses
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          test -n "$SDK"
+          set +o pipefail
+          yes | "$SDK/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$SDK" --licenses > /dev/null || true
+
+      - name: Install pinned llama.cpp source
+        shell: bash
+        run: bash android/MLCChat/app/src/main/cpp/setup-llama.sh
+
+      - name: Build debug APK (with llama.cpp)
+        shell: bash
+        working-directory: android/MLCChat
+        run: |
+          set -euo pipefail
+          chmod +x ./gradlew
+          ./gradlew --no-daemon --stacktrace :app:assembleDebug -PenableLlamaCpp=true
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: enterprise-ai-studio-debug-apk
+          path: android/MLCChat/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      # Runs only when a tag such as v1.0 is pushed (or created via the Releases page).
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: android/MLCChat/app/build/outputs/apk/debug/*.apk
+          generate_release_notes: true
+          prerelease: true
