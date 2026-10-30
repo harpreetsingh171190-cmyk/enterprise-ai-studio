@@ -60,11 +60,12 @@ jobs:
         if: github.ref == 'refs/heads/main'
         shell: bash
         env:
-          MLC_GITHUB_TOKEN: ${{ secrets.MLC_GITHUB_TOKEN }}
+          # PAT secret hove taan oh vartao, nahi taan automatic GITHUB_TOKEN
+          MLC_GITHUB_TOKEN: ${{ secrets.MLC_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           if [[ -z "$MLC_GITHUB_TOKEN" ]]; then
-            echo 'MLC_GITHUB_TOKEN secret is not configured.' >&2
+            echo 'No GitHub token available.' >&2
             exit 1
           fi
           git remote set-url origin "https://x-access-token:${MLC_GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
