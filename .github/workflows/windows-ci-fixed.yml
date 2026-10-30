@@ -1,0 +1,53 @@
+# Windows CI for MLC-LLM
+name: Windows CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  Windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: 'cmd /C call {0}'
+
+    steps:
+      - name: Configure Git long paths
+        run: git config --system core.longpaths true
+
+      - name: Checkout source and submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Set up Conda
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          activate-environment: mlc-llm-build
+          channel-priority: strict
+          environment-file: ci/build-environment.yaml
+          auto-activate-base: false
+
+      - name: Conda information
+        run: |
+          conda info
+          conda list
+          python --version
+
+      - name: Set up MSVC developer environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      # TVM TIRX can be configured without LLVM. This is a CI build
+      # workaround, not a substitute for LLVM-dependent functionality.
+      - name: Build MLC-LLM without LLVM
+        env:
+          SKBUILD_CMAKE_DEFINE_TVM_TIRX_USE_LLVM: 'OFF'
+        run: ci/task/build_win.bat
