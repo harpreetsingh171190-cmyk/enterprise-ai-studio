@@ -91,21 +91,26 @@ target_include_directories(mlc_llm_objs PRIVATE ${TOKENZIER_CPP_PATH}/include)
 target_include_directories(mlc_llm_objs PRIVATE ${XGRAMMAR_PATH}/include)
 # xgrammar still depends on picojson - use its bundled copy
 target_include_directories(mlc_llm_objs
-                           PRIVATE ${XGRAMMAR_PATH}/3rdparty/picojson)
+                            PRIVATE ${XGRAMMAR_PATH}/3rdparty/picojson)
 target_link_libraries(mlc_llm_objs PRIVATE tvm_ffi_header)
 
 add_library(mlc_llm SHARED $<TARGET_OBJECTS:mlc_llm_objs>)
 add_library(mlc_llm_static STATIC $<TARGET_OBJECTS:mlc_llm_objs>)
-add_dependencies(mlc_llm_static tokenizers_cpp sentencepiece-static
-                 tokenizers_c tvm_runtime tvm_runtime_extra)
+set(_mlc_llm_static_deps tokenizers_cpp sentencepiece-static tvm_runtime)
+if(TARGET tvm_runtime_extra)
+  list(APPEND _mlc_llm_static_deps tvm_runtime_extra)
+endif()
+add_dependencies(mlc_llm_static ${_mlc_llm_static_deps})
 set_target_properties(mlc_llm_static PROPERTIES OUTPUT_NAME mlc_llm)
 
 target_link_libraries(mlc_llm PUBLIC tvm_runtime)
-target_link_libraries(mlc_llm PRIVATE tvm_runtime_extra)
+if(TARGET tvm_runtime_extra)
+  target_link_libraries(mlc_llm PRIVATE tvm_runtime_extra)
+endif()
 target_link_libraries(mlc_llm PRIVATE tokenizers_cpp)
 
 find_library(FLASH_ATTN_LIBRARY flash_attn
-             HINTS ${TVM_SOURCE_DIR}/*/3rdparty/libflash_attn/src)
+              HINTS ${TVM_SOURCE_DIR}/*/3rdparty/libflash_attn/src)
 
 if(FLASH_ATTN_LIBRARY STREQUAL "FLASH_ATTN_LIBRARY-NOTFOUND")
   message(
@@ -130,7 +135,7 @@ if(BUILD_CPP_TEST)
   add_executable(mlc_llm_cpp_tests ${MLC_LLM_TEST_SRCS})
   target_include_directories(mlc_llm_cpp_tests PRIVATE ${MLC_LLM_INCLUDES})
   target_include_directories(mlc_llm_cpp_tests
-                             PRIVATE ${PROJECT_SOURCE_DIR}/cpp)
+                              PRIVATE ${PROJECT_SOURCE_DIR}/cpp)
   target_include_directories(
     mlc_llm_cpp_tests PRIVATE ${gtest_SOURCE_DIR}/include ${gtest_SOURCE_DIR})
   target_link_libraries(mlc_llm_cpp_tests PUBLIC mlc_llm gtest gtest_main)
@@ -143,7 +148,9 @@ endif()
 
 add_library(mlc_llm_module SHARED $<TARGET_OBJECTS:mlc_llm_objs>)
 target_link_libraries(mlc_llm_module PUBLIC tvm_runtime)
-target_link_libraries(mlc_llm_module PRIVATE tvm_runtime_extra)
+if(TARGET tvm_runtime_extra)
+  target_link_libraries(mlc_llm_module PRIVATE tvm_runtime_extra)
+endif()
 target_link_libraries(mlc_llm_module PRIVATE tokenizers_cpp)
 
 set_property(
@@ -163,8 +170,11 @@ endif()
 
 # when this option is on, we install all static lib deps into lib
 if(MLC_LLM_INSTALL_STATIC_LIB)
-  install(TARGETS mlc_llm_static tokenizers_cpp sentencepiece-static tvm_runtime
-                  tvm_runtime_extra
+  set(_mlc_install_targets mlc_llm_static tokenizers_cpp sentencepiece-static tvm_runtime)
+  if(TARGET tvm_runtime_extra)
+    list(APPEND _mlc_install_targets tvm_runtime_extra)
+  endif()
+  install(TARGETS ${_mlc_install_targets}
           LIBRARY DESTINATION lib${LIB_SUFFIX})
   # tokenizers need special handling as it builds from rust
   if(MSVC)
@@ -175,14 +185,12 @@ if(MLC_LLM_INSTALL_STATIC_LIB)
             DESTINATION lib${LIB_SUFFIX})
   endif()
 else()
+  set(_mlc_install_targets tvm_runtime mlc_llm mlc_llm_module mlc_llm_static tokenizers_cpp sentencepiece-static)
+  if(TARGET tvm_runtime_extra)
+    list(APPEND _mlc_install_targets tvm_runtime_extra)
+  endif()
   install(
-    TARGETS tvm_runtime
-            tvm_runtime_extra
-            mlc_llm
-            mlc_llm_module
-            mlc_llm_static
-            tokenizers_cpp
-            sentencepiece-static
+    TARGETS ${_mlc_install_targets}
             RUNTIME_DEPENDENCY_SET
             tokenizers_c
     RUNTIME DESTINATION bin
