@@ -3,28 +3,43 @@ name: Windows CI
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   pull_request:
-    branches:
-      - main
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   Windows:
+    name: Build MLC-LLM on Windows
     runs-on: windows-latest
+    timeout-minutes: 120
+
     defaults:
       run:
-        shell: 'cmd /C call {0}'
+        shell: cmd /C call {0}
 
     steps:
       - name: Configure Git long paths
-        run: git config --system core.longpaths true
+        run: git config --global core.longpaths true
 
       - name: Checkout source and submodules
         uses: actions/checkout@v4
         with:
           submodules: recursive
           fetch-depth: 0
+
+      - name: Verify submodules
+        run: |
+          git submodule status
+          if not exist "3rdparty\tvm\CMakeLists.txt" exit /b 1
+          if not exist "3rdparty\tokenizers-cpp\CMakeLists.txt" exit /b 1
 
       - name: Set up Conda
         uses: conda-incubator/setup-miniconda@v3
@@ -45,9 +60,18 @@ jobs:
         with:
           arch: x64
 
-      # TVM TIRX can be configured without LLVM. This is a CI build
-      # workaround, not a substitute for LLVM-dependent functionality.
+      - name: Verify Python build backend
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install scikit-build-core
+          python -c "import scikit_build_core.build; print('Build backend OK')"
+
       - name: Build MLC-LLM without LLVM
         env:
-          SKBUILD_CMAKE_DEFINE_TVM_TIRX_USE_LLVM: 'OFF'
-        run: ci/task/build_win.bat
+          SKBUILD_CMAKE_DEFINE_TVM_TIRX_USE_LLVM: "OFF"
+          SKBUILD_CMAKE_ARGS: "-DTVM_TIRX_USE_LLVM=OFF"
+        run: |
+          echo TVM_TIRX_USE_LLVM=OFF
+          echo SKBUILD_CMAKE_ARGS=%SKBUILD_CMAKE_ARGS%
+          call ci\task\build_win.bat
+          if errorlevel 1 exit /b 1
