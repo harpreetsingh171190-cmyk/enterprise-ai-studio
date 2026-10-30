@@ -36,4 +36,4 @@ jobs:
         git remote set-url origin https://x-access-token:${{ secrets.MLC_GITHUB_TOKEN }}@github.com/$GITHUB_REPOSITORY
         git config --global user.email "mlc-gh-actions-bot@nomail"
         git config --global user.name "mlc-gh-actions-bot"
-        ./scripts/gh_deploy_site.sh
+        bash ./scripts/gh_deploy_site.sh
